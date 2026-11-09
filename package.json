@@ -1,0 +1,12 @@
+{
+  "name": "gomoku-online",
+  "version": "1.0.0",
+  "description": "联机五子棋：PVP 实时对战 + PVE 人机对战",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

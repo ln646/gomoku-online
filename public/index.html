@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>联机五子棋</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23222'/><circle cx='38' cy='40' r='10' fill='%23555'/></svg>">
+</head>
+<body>
+
+<!-- ========== 大厅 ========== -->
+<div id="lobby" class="screen active">
+  <div class="lobby-card">
+    <div class="logo">
+      <span class="stone black"></span>
+      <h1>联机五子棋</h1>
+      <span class="stone white"></span>
+    </div>
+    <p class="slogan">15×15 棋盘 · 黑先白后 · 五子连线</p>
+
+    <input id="playerName" class="input" maxlength="12" placeholder="输入你的昵称（可选）" autocomplete="off">
+
+    <div class="mode-grid">
+      <button class="mode-btn primary" data-action="create">
+        <span class="icon">🏠</span>
+        <span class="title">创建房间</span>
+        <span class="desc">生成房间号，邀请好友加入</span>
+      </button>
+      <button class="mode-btn" data-action="join">
+        <span class="icon">🔗</span>
+        <span class="title">加入房间</span>
+        <span class="desc">输入房间号进入对局</span>
+      </button>
+      <button class="mode-btn" data-action="quick">
+        <span class="icon">⚡</span>
+        <span class="title">快速匹配</span>
+        <span class="desc">自动匹配在线玩家</span>
+      </button>
+      <button class="mode-btn" data-action="pve">
+        <span class="icon">🤖</span>
+        <span class="title">人机对战</span>
+        <span class="desc">挑战 AI，三档难度</span>
+      </button>
+    </div>
+
+    <div id="joinPanel" class="join-panel hidden">
+      <input id="roomCodeInput" class="input code-input" maxlength="4" inputmode="numeric" placeholder="房间号（4位数字）" autocomplete="off">
+      <button id="joinConfirmBtn" class="btn primary">加入</button>
+    </div>
+
+    <div id="pvePanel" class="join-panel hidden">
+      <div class="diff-group">
+        <button class="btn diff" data-level="easy">简单</button>
+        <button class="btn diff" data-level="medium">中等</button>
+        <button class="btn diff" data-level="hard">困难</button>
+      </div>
+    </div>
+
+    <div id="lobbyStatus" class="lobby-status hidden"></div>
+    <p class="footer-tip">连接地址 <span id="wsHint"></span></p>
+  </div>
+</div>
+
+<!-- ========== 对局 ========== -->
+<div id="game" class="screen">
+  <header class="game-header">
+    <button id="backBtn" class="btn ghost small">← 大厅</button>
+    <div id="roomInfo" class="room-info"></div>
+    <div class="header-right">
+      <button id="copyCodeBtn" class="btn ghost small hidden">复制房间号</button>
+    </div>
+  </header>
+
+  <main class="game-layout">
+    <!-- 对方面板（移动端在棋盘上方） -->
+    <section id="topPlayerBar" class="player-bar top"></section>
+
+    <div class="board-wrap">
+      <canvas id="board" width="600" height="600"></canvas>
+      <div id="turnBanner" class="turn-banner hidden"></div>
+      <div id="endBanner" class="end-banner hidden">
+        <div class="end-title" id="endTitle"></div>
+        <div class="end-sub" id="endSub"></div>
+        <div class="end-actions">
+          <button id="rematchBtn" class="btn primary">再来一局</button>
+          <button id="replayBtn" class="btn">回放棋局</button>
+          <button id="exitBtn" class="btn ghost">返回大厅</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 己方面板 -->
+    <section id="bottomPlayerBar" class="player-bar bottom"></section>
+
+    <aside class="side-panel">
+      <div class="panel-block">
+        <h3>对局信息</h3>
+        <div id="turnInfo" class="turn-info"></div>
+        <div id="moveCount" class="move-count"></div>
+      </div>
+
+      <div class="panel-block actions">
+        <button id="undoBtn" class="btn">↩ 悔棋</button>
+        <button id="resignBtn" class="btn danger">🏳 认输</button>
+        <div id="undoPrompt" class="undo-prompt hidden">
+          <p id="undoPromptText"></p>
+          <div class="prompt-actions">
+            <button id="undoAcceptBtn" class="btn primary small">同意</button>
+            <button id="undoRejectBtn" class="btn danger small">拒绝</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 回放控制 -->
+      <div id="replayPanel" class="panel-block replay hidden">
+        <h3>棋局回放</h3>
+        <div class="replay-controls">
+          <button id="rpFirst" class="btn small">⏮</button>
+          <button id="rpPrev" class="btn small">◀</button>
+          <button id="rpToggle" class="btn small">▶ 播放</button>
+          <button id="rpNext" class="btn small">▶|</button>
+          <button id="rpLast" class="btn small">⏭</button>
+        </div>
+        <input id="rpSlider" type="range" min="0" value="0" step="1">
+        <div id="rpLabel" class="rp-label"></div>
+      </div>
+
+      <div class="panel-block chat-block">
+        <h3>快捷消息</h3>
+        <div class="quick-chat">
+          <button class="btn small chat" data-text="你好，请多指教！">👋 打个招呼</button>
+          <button class="btn small chat" data-text="下得漂亮！">👍 下得漂亮</button>
+          <button class="btn small chat" data-text="让我想想…">🤔 让我想想</button>
+          <button class="btn small chat" data-text="再来一局吧！">🔄 再来一局</button>
+        </div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<!-- 通用确认弹窗 -->
+<div id="modal" class="modal hidden">
+  <div class="modal-card">
+    <p id="modalText"></p>
+    <div class="modal-actions">
+      <button id="modalOk" class="btn primary">确定</button>
+      <button id="modalCancel" class="btn ghost">取消</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
