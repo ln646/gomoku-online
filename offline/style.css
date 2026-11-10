@@ -53,6 +53,7 @@ body {
 .btn:active { transform: scale(.97); }
 .btn:hover { filter: brightness(1.15); }
 .btn.primary { background: linear-gradient(135deg, #f0b04a, #e0891f); color: #221605; }
+.btn.install { background: linear-gradient(135deg, #5aa9f0, #2f7de0); color: #081426; }
 .btn.ghost { background: transparent; border: 1px solid rgba(255,255,255,.18); color: var(--muted); }
 .btn.big { padding: 15px 18px; font-size: 17px; }
 .btn.small { padding: 7px 12px; font-size: 13px; }

@@ -503,6 +503,29 @@ $('soundBtn').addEventListener('click', () => {
   toast(on ? '音效已关闭' : '音效已开启');
 });
 
+// ---------- PWA：安装到桌面 / 离线缓存 ----------
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  $('installBtn').classList.remove('hidden');
+});
+$('installBtn').addEventListener('click', async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const { outcome } = await deferredInstallPrompt.userChoice;
+  if (outcome === 'accepted') toast('已安装，桌面见！🎉');
+  deferredInstallPrompt = null;
+  $('installBtn').classList.add('hidden');
+});
+window.addEventListener('appinstalled', () => {
+  $('installBtn').classList.add('hidden');
+  toast('安装成功，从此离线可玩');
+});
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+
 // ---------- 启动 ----------
 function refreshResumeBtn() {
   const s = loadSavedGame();
