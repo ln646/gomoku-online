@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>数独 · 单机版</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#1e2430">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+
+<!-- ======== 开始界面 ======== -->
+<div id="menuScreen" class="screen active">
+  <div class="menu-wrap">
+    <h1 class="title">数独</h1>
+    <p class="subtitle">单机版 · 无需联网 · 鼠标 / 触屏均可</p>
+
+    <div class="menu-card" id="menuMain">
+      <button class="btn primary big" id="newBtn">🎯 新游戏</button>
+      <button class="btn ghost big hidden" id="resumeBtn">▶ 继续上局</button>
+      <button class="btn big install hidden" id="installBtn">📲 安装到手机桌面</button>
+    </div>
+
+    <div class="menu-card hidden" id="setupCard">
+      <div class="setup-row">
+        <span class="setup-label">难度</span>
+        <div class="seg" id="levelSeg">
+          <button data-level="easy">简单</button>
+          <button data-level="medium" class="on">中等</button>
+          <button data-level="hard">困难</button>
+        </div>
+      </div>
+      <div class="setup-row btns">
+        <button class="btn primary" id="startBtn">开始游戏</button>
+        <button class="btn ghost" id="backBtn">返回</button>
+      </div>
+      <p class="hint" id="levelDesc">中等：约 32 个提示数字，适合大多数玩家。</p>
+    </div>
+
+    <div class="stats-card" id="statsBox"></div>
+    <button class="link-btn" id="clearStatsBtn">清空战绩</button>
+  </div>
+</div>
+
+<!-- ======== 游戏主界面 ======== -->
+<div id="gameScreen" class="screen">
+  <div class="topbar">
+    <button class="btn small ghost" id="homeBtn">🏠 主菜单</button>
+    <div id="modeInfo"></div>
+    <div class="hud">
+      <span id="timeInfo">⏱ 00:00</span>
+      <span id="errInfo" class="err zero">✖ 0</span>
+    </div>
+  </div>
+
+  <div class="board-area">
+    <div id="board"></div>
+  </div>
+
+  <div class="numpad" id="numpad"></div>
+
+  <div class="controls">
+    <button class="btn" id="undoBtn">↩ 撤销</button>
+    <button class="btn" id="checkBtn">✔ 检查</button>
+    <button class="btn" id="resetBtn">🧹 清空重填</button>
+    <button class="btn" id="pauseBtn">⏸ 暂停</button>
+    <button class="btn" id="newGameBtn">🔄 新一局</button>
+  </div>
+
+  <!-- 暂停界面 -->
+  <div id="pauseOverlay" class="overlay hidden">
+    <div class="overlay-card">
+      <h2>已暂停</h2>
+      <p class="hint">按 Esc 键也可以继续</p>
+      <button class="btn primary big" id="resumeGameBtn">▶ 继续游戏</button>
+      <button class="btn ghost big" id="pauseHomeBtn">🏠 返回主菜单</button>
+    </div>
+  </div>
+
+  <!-- 结算界面 -->
+  <div id="endOverlay" class="overlay hidden">
+    <div class="overlay-card">
+      <h2 id="endTitle">🎉 完成！</h2>
+      <p id="endDetail" class="end-detail"></p>
+      <div id="endStats" class="end-stats"></div>
+      <button class="btn primary big" id="againBtn">🔄 再来一局</button>
+      <button class="btn ghost big" id="endHomeBtn">🏠 返回主菜单</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+</div>
+
+<script src="sudoku.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
