@@ -6,6 +6,10 @@ const LS_STATS = 'gomoku_offline_stats_v1';
 const LS_SAVE  = 'gomku_offline_save_v1';
 const LS_SOUND = 'gomoku_offline_sound';
 
+// 难度名称与图标（全站共用）
+const LV_NAMES = { easy: '简单', medium: '中等', hard: '困难', hell: '地狱', world: '世界' };
+const LV_LEVELS = ['easy', 'medium', 'hard', 'hell', 'world'];
+
 // ---------- 全局状态 ----------
 const G = {
   mode: 'pve',            // pve | pvp
@@ -60,15 +64,22 @@ function sndLose() { [400, 320, 240].forEach((f, i) => setTimeout(() => beep(f, 
 
 // ---------- 本地存档：战绩统计 ----------
 function loadStats() {
-  try { return JSON.parse(localStorage.getItem(LS_STATS)) || defaultStats(); }
-  catch (e) { return defaultStats(); }
+  const base = defaultStats();
+  try {
+    const s = JSON.parse(localStorage.getItem(LS_STATS));
+    if (!s) return base;
+    // 兼容旧存档：补齐新增难度与缺失字段
+    for (const lv of LV_LEVELS) if (!s.pve[lv]) s.pve[lv] = { w: 0, l: 0, d: 0 };
+    if (!s.pvp || typeof s.pvp !== 'object') s.pvp = base.pvp;
+    if (typeof s.streak !== 'number') s.streak = 0;
+    if (typeof s.bestStreak !== 'number') s.bestStreak = 0;
+    return s;
+  } catch (e) { return base; }
 }
 function defaultStats() {
-  return {
-    pve: { easy: { w: 0, l: 0, d: 0 }, medium: { w: 0, l: 0, d: 0 }, hard: { w: 0, l: 0, d: 0 } },
-    pvp: { b: 0, w: 0, d: 0 },
-    streak: 0, bestStreak: 0,
-  };
+  const pve = {};
+  for (const lv of LV_LEVELS) pve[lv] = { w: 0, l: 0, d: 0 };
+  return { pve, pvp: { b: 0, w: 0, d: 0 }, streak: 0, bestStreak: 0 };
 }
 function saveStats(s) { localStorage.setItem(LS_STATS, JSON.stringify(s)); }
 
@@ -90,11 +101,11 @@ function recordResult(win) {
 
 function renderStats() {
   const st = loadStats();
-  const lvName = { easy: '简单', medium: '中等', hard: '困难' };
   let html = '<h3>📊 战绩统计</h3>';
-  for (const lv of ['easy', 'medium', 'hard']) {
+  for (const lv of LV_LEVELS) {
     const r = st.pve[lv];
-    html += `<div class="stat-line"><span>${lvName[lv]}</span>
+    const nm = lv === 'hell' ? '🔥 地狱' : lv === 'world' ? '🌍 世界' : LV_NAMES[lv];
+    html += `<div class="stat-line"><span>${nm}</span>
       <span><b class="w">胜${r.w}</b> · <b class="l">负${r.l}</b> · <b class="d">和${r.d}</b></span></div>`;
   }
   html += `<div class="stat-line"><span>双人对战</span>
@@ -130,14 +141,21 @@ const levelDesc = {
   easy: '简单：AI 经常犯错，适合新手熟悉规则。',
   medium: '中等：AI 有基本的攻防意识，适合练手。',
   hard: '困难：AI 全盘评估、主动封堵，不服来战。',
+  hell: '地狱：AI 主动构建双活三、四三等多路杀招，防守滴水不漏——几乎不可能取胜。',
+  world: '世界：最强棋力——深度搜索 + 连冲四必胜点计算 + 精确局势评估，挑战人类极限。',
 };
-$('levelSeg').addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
-  $('levelSeg').querySelectorAll('button').forEach(x => x.classList.remove('on'));
-  b.classList.add('on');
-  G.level = b.dataset.level;
-  $('levelDesc').textContent = levelDesc[G.level];
-});
+// 两个选择器（常规档 + 挑战档）共用同一逻辑
+for (const segId of ['levelSeg', 'levelSeg2']) {
+  $(segId).addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#levelSeg button, #levelSeg2 button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    G.level = b.dataset.level;
+    const descEl = $('levelDesc');
+    descEl.textContent = levelDesc[G.level];
+    descEl.classList.toggle('warn', G.level === 'hell' || G.level === 'world');
+  });
+}
 $('colorSeg').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   $('colorSeg').querySelectorAll('button').forEach(x => x.classList.remove('on'));
@@ -187,7 +205,7 @@ function enterGameScreen() {
   $('pauseOverlay').classList.add('hidden');
   $('endOverlay').classList.add('hidden');
   $('modeInfo').textContent = G.mode === 'pve'
-    ? `人机 · ${{ easy: '简单', medium: '中等', hard: '困难' }[G.level]} · 你执${G.playerColor === BLACK ? '黑' : '白'}`
+    ? `人机 · ${LV_NAMES[G.level]} · 你执${G.playerColor === BLACK ? '黑' : '白'}`
     : '双人同屏 · 黑先白后';
 }
 
@@ -236,13 +254,14 @@ function maybeAiTurn() {
   if (G.mode !== 'pve' || G.status !== 'playing') return;
   const aiColor = G.playerColor === BLACK ? WHITE : BLACK;
   if (G.turn !== aiColor) return;
-  $('turnInfo').innerHTML = `<span class="dot ${aiColor === BLACK ? 'black' : 'white'}"></span>AI 思考中…`;
+  $('turnInfo').innerHTML = `<span class="dot ${aiColor === BLACK ? 'black' : 'white'}"></span>${
+    G.level === 'world' ? 'AI 深度思考中…' : 'AI 思考中…'}`;
   const seqAtStart = G.moveSeq;
   G.aiTimer = setTimeout(() => {
     if (G.status !== 'playing' || G.moveSeq !== seqAtStart) return; // 局面已变化（悔棋/重开）
     const mv = aiMove(G.board, aiColor, G.level);
     placeStone(mv);
-  }, 350 + Math.random() * 450);
+  }, G.level === 'hell' || G.level === 'world' ? 200 + Math.random() * 200 : 350 + Math.random() * 450);
 }
 
 // ---------- 悔棋 ----------
@@ -338,7 +357,7 @@ function finishGame(winnerColor, line) {
     const iWin = winnerColor === G.playerColor;
     title = iWin ? '🎉 你赢了！' : '💻 AI 获胜';
     detail = `${winnerColor === BLACK ? '黑方' : '白方'}五子连线。${
-      iWin ? `击败${{ easy: '简单', medium: '中等', hard: '困难' }[G.level]} AI！当前连胜 ${stats.streak}。`
+      iWin ? `击败${LV_NAMES[G.level]} AI！当前连胜 ${stats.streak}。`
            : `再接再厉，试试换个开局策略。`}`;
     iWin ? sndWin() : sndLose();
   } else {
@@ -350,11 +369,10 @@ function finishGame(winnerColor, line) {
   $('endDetail').textContent = detail;
 
   // 结算统计
-  const lvName = { easy: '简单', medium: '中等', hard: '困难' };
   let es;
   if (G.mode === 'pve') {
     const r = stats.pve[G.level];
-    es = `<div class="stat-line"><span>${lvName[G.level]}难度累计</span>
+    es = `<div class="stat-line"><span>${LV_NAMES[G.level]}难度累计</span>
       <span><b class="w">胜${r.w}</b> · <b class="l">负${r.l}</b> · <b class="d">和${r.d}</b></span></div>
       <div class="stat-line"><span>当前连胜 / 最高连胜</span><span><b>${stats.streak}</b> / <b>${stats.bestStreak}</b></span></div>`;
   } else {

@@ -1,5 +1,5 @@
 // Service Worker：离线缓存应用外壳，安装后完全离线可玩
-const CACHE_NAME = 'gomoku-offline-v1';
+const CACHE_NAME = 'gomoku-offline-v2';
 const ASSETS = [
   './',
   './index.html',
