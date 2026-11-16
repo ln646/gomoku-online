@@ -171,11 +171,88 @@ function fourPointsOf(board, color, cands) {
   return out;
 }
 
+// 预计算每个候选点的落子信息（我方落子后的方向分 / 对方落子后的方向分）
+function buildMoveInfo(board, color, cands) {
+  const opp = 3 - color;
+  return cands.map(i => {
+    const x = i % SIZE, y = Math.floor(i / SIZE);
+    board[i] = color;
+    const win = !!checkWin(board, x, y, color);
+    const myDirs = win ? [1e9, 1e9, 1e9, 1e9] : dirScores(board, x, y, color);
+    board[i] = 0;
+    const oppDirs = dirScores(board, x, y, opp);
+    return { i, x, y, win, myDirs, oppDirs, mySum: sumDir(myDirs), oppSum: sumDir(oppDirs) };
+  });
+}
+
+// 假如 color 落在 i，之后能直接连五的点有几个（>=2 即活四/双四，两步必胜）
+function countFivePoints(board, color, i) {
+  if (board[i] !== 0) return 0;
+  board[i] = color;
+  const n = winPointsOf(board, color, candidates(board, 2)).length;
+  board[i] = 0;
+  return n;
+}
+
+// 硬规则（优先级严格，不可被任何进攻思路覆盖）：
+//   1) 自己能连五 → 直接赢
+//   2) 对方能连五 → 必须堵（冲四/活四面前，进攻一律让位）
+//   3) 自己一手造出双成五点（活四 / 双四）→ 必胜
+//   4) 对方一手能造出双成五点（活四 / 双四）→ 必须堵，返回全部候选点交给上层择优
+// 返回 { move, kind, options }（options 为可接受的落点集合），没有强制手时返回 null
+function forcedMove(board, color, info) {
+  const opp = 3 - color;
+  if (!info) {
+    const cands = candidates(board, 2);
+    if (!cands.length) return null;
+    info = buildMoveInfo(board, color, cands);
+  }
+
+  // 1. 立即取胜
+  const own = info.find(d => d.win);
+  if (own) return { move: own.i, kind: 'win', options: [own.i] };
+
+  // 2. 对方成五点：必挡（只挑自身进攻价值最高的挡点）
+  const oppFive = info.filter(d => d.oppDirs.some(s => s >= 1e7));
+  if (oppFive.length) {
+    return {
+      move: oppFive.reduce((a, b) => (b.mySum > a.mySum ? b : a)).i,
+      kind: 'block-five',
+      options: oppFive.map(d => d.i),
+    };
+  }
+
+  // 3. 我方一手成双成五点 → 两步必胜
+  let bestC = null, bestCv = -Infinity;
+  for (const d of info) {
+    if (!d.myDirs.some(s => s >= 1e5)) continue;
+    if (countFivePoints(board, color, d.i) < 2) continue;
+    const v = d.mySum + d.oppSum;
+    if (v > bestCv) { bestCv = v; bestC = d; }
+  }
+  if (bestC) return { move: bestC.i, kind: 'make-live-four', options: [bestC.i] };
+
+  // 4. 对方一手能成双成五点（活四/双四）→ 必须堵，候选点全部返回
+  let bestD = null, bestDv = -Infinity;
+  const defPts = [];
+  for (const d of info) {
+    if (!d.oppDirs.some(s => s >= 1e5)) continue;
+    if (countFivePoints(board, opp, d.i) < 2) continue;
+    defPts.push(d.i);
+    if (d.mySum > bestDv) { bestDv = d.mySum; bestD = d; }
+  }
+  if (bestD) return { move: bestD.i, kind: 'block-live-four', options: defPts };
+
+  return null;
+}
+
 // 简化 VCF：连续冲四取胜搜索，返回第一手落点或 null
 function vcfSearch(board, color, depth) {
   const cands = candidates(board, 2);
   if (cands.length === 0) return null;
   const opp = 3 - color;
+  // 对方已有成五点：任何冲四战术都来不及，对方会直接连五
+  if (winPointsOf(board, opp, cands).length) return null;
   for (const i of fourPointsOf(board, color, cands)) {
     const x = i % SIZE, y = Math.floor(i / SIZE);
     board[i] = color;
@@ -199,74 +276,30 @@ function vcfSearch(board, color, depth) {
   return null;
 }
 
+// 地狱模式：硬规则 + 冲四连击 + 浅层搜索（评估偏进攻，主动造双威胁）
 function pickHell(board, color) {
-  const opp = color === BLACK ? WHITE : BLACK;
   const cands = candidates(board, 2);
   if (!cands.length) return idx(7, 7);
   if (cands.length === 1) return cands[0];
 
-  // 预计算：每个候选点我方/对方落子后的方向分
-  const info = cands.map(i => {
-    const x = i % SIZE, y = Math.floor(i / SIZE);
-    board[i] = color;
-    const win = checkWin(board, x, y, color);
-    const myDirs = win ? [1e9, 0, 0, 0] : dirScores(board, x, y, color);
-    board[i] = 0;
-    const oppDirs = dirScores(board, x, y, opp);
-    return { i, x, y, win, myDirs, oppDirs };
-  });
-
-  // 1. 立即取胜
-  const w = info.find(d => d.win);
-  if (w) return w.i;
-
-  // 2. 对方能成五 → 必挡（选自身进攻分最高的挡点）
-  const oppWinPts = info.filter(d => d.oppDirs.some(s => s >= 1e7));
-  if (oppWinPts.length) {
-    return oppWinPts.reduce((a, b) => sumDir(b.myDirs) > sumDir(a.myDirs) ? b : a).i;
-  }
-
-  // 3. 我方能成活四且对方无四威胁 → 直接下（两步必胜）
-  const myOpenFour = info.find(d => d.myDirs.some(s => s >= 1e6));
-  const oppFourPts = info.filter(d => d.oppDirs.some(s => s >= 1e5 && s < 1e7));
-  if (myOpenFour && oppFourPts.length === 0) return myOpenFour.i;
-
-  // 4. 对方有四威胁（含活四点）→ 必封堵（兼顾自身进攻）
-  if (oppFourPts.length) {
-    return oppFourPts.reduce((a, b) => sumDir(b.myDirs) > sumDir(a.myDirs) ? b : a).i;
-  }
-
-  // 5. 通用评分：攻防 + 主动构建多路威胁（双活三 / 四三杀）
-  for (const d of info) {
-    const myThrees = d.myDirs.filter(s => s >= 5e4 && s < 1e5).length;  // 活三
-    const myFours = d.myDirs.filter(s => s >= 1e5 && s < 1e6).length;   // 冲四
-    let score = sumDir(d.myDirs) + sumDir(d.oppDirs) * 0.95;
-    if (myFours >= 1 && myThrees >= 1) score += 600000;       // 四三双杀
-    else if (myThrees + myFours >= 2) score += 350000;        // 双活三 / 双四
-    else if (myThrees === 1) score += 80000;
-    score -= (Math.abs(d.x - 7) + Math.abs(d.y - 7)) * 4;
-    score += Math.random() * 8;
-    d.score = score;
-  }
-  info.sort((a, b) => b.score - a.score);
-
-  // 6. 二层验证：模拟我落子后对方最强回应，杜绝送出先手
-  let best = info[0], bestVal = -Infinity;
-  for (const d of info.slice(0, 6)) {
-    board[d.i] = color;
-    let oppBest = 0;
-    for (const j of candidates(board, 2)) {
-      const jx = j % SIZE, jy = Math.floor(j / SIZE);
-      board[j] = opp;
-      const v = checkWin(board, jx, jy, opp) ? 1e9 : sumDir(dirScores(board, jx, jy, opp));
-      board[j] = 0;
-      if (v > oppBest) oppBest = v;
+  // 1. 硬规则：立即取胜 / 挡对方连五 / 我方活四必胜 / 挡对方活四
+  const info = buildMoveInfo(board, color, cands);
+  const forced = forcedMove(board, color, info);
+  if (forced) {
+    if (forced.kind === 'block-live-four' && forced.options.length > 1) {
+      const pick = worldSearchRoot(board, color, forced.options, 600, 1.05, 6);
+      if (pick !== null) return pick;
     }
-    board[d.i] = 0;
-    const val = d.score - oppBest * 0.85;
-    if (val > bestVal) { bestVal = val; best = d; }
+    return forced.move;
   }
-  return best.i;
+
+  // 2. 冲四连击抢胜
+  const vcf = vcfSearch(board, color, 3);
+  if (vcf !== null) return vcf;
+
+  // 3. 搜索：深度 2→4→6，对手权重 1.05（略偏抢攻），预算 700ms
+  const pick = worldSearchRoot(board, color, null, 700, 1.05, 6);
+  return pick !== null ? pick : staticBest(board, color);
 }
 
 /* ==================== 世界模式：VCF + 迭代加深 α-β 全盘搜索 ==================== */
@@ -300,8 +333,11 @@ function shapeScoreWorld(board, color) {
   return s;
 }
 
+// 攻防权重：>1 更重视对手威胁（稳健），<1 更敢抢攻（凶狠）。地狱模式用 0.95，世界模式用 1.15
+let EVAL_OPP_W = 1.15;
+
 function evalBoardWorld(board, aiColor) {
-  return shapeScoreWorld(board, aiColor) - shapeScoreWorld(board, 3 - aiColor) * 1.15;
+  return shapeScoreWorld(board, aiColor) - shapeScoreWorld(board, 3 - aiColor) * EVAL_OPP_W;
 }
 
 // 搜索节点走子生成：取胜手直接返回；必挡点保底；其余按静态分排序截断
@@ -334,7 +370,7 @@ function worldOrderedMoves(board, mover, limit) {
 function worldSearch(board, depth, alpha, beta, mover, aiColor, deadline, ply) {
   if (Date.now() > deadline) throw { timeout: true };
   if (depth <= 0) return evalBoardWorld(board, aiColor);
-  const moves = worldOrderedMoves(board, mover, ply <= 2 ? 12 : 8);
+  const moves = worldOrderedMoves(board, mover, ply <= 2 ? 16 : 10);
   if (!moves.length) return evalBoardWorld(board, aiColor);
   if (mover === aiColor) {
     let best = -Infinity;
@@ -367,8 +403,8 @@ function worldSearch(board, depth, alpha, beta, mover, aiColor, deadline, ply) {
   }
 }
 
-function worldRoot(board, aiColor, depth, deadline) {
-  const moves = worldOrderedMoves(board, aiColor, 14);
+function worldRoot(board, aiColor, depth, deadline, roots) {
+  const moves = (roots && roots.length) ? roots.slice() : worldOrderedMoves(board, aiColor, 16);
   let bestMove = moves[0], bestScore = -Infinity, alpha = -Infinity;
   for (const m of moves) {
     const x = m % SIZE, y = Math.floor(m / SIZE);
@@ -398,41 +434,48 @@ function staticBest(board, color) {
   return best;
 }
 
+// 迭代加深外壳：roots 不为空时只在这些点里选（用于多个必挡点之间择优）
+function worldSearchRoot(board, color, roots, budgetMs, oppWeight, maxDepth) {
+  const prevW = EVAL_OPP_W;
+  if (typeof oppWeight === 'number') EVAL_OPP_W = oppWeight;
+  const deadline = Date.now() + (budgetMs || 1200);
+  const maxD = maxDepth || 6;
+  let best = null;
+  try {
+    for (const depth of [2, 4, 6]) {
+      if (depth > maxD) break;
+      try {
+        best = worldRoot(board, color, depth, deadline, roots);
+      } catch (e) { break; }  // 超时沿用上一层完整结果
+    }
+  } finally {
+    EVAL_OPP_W = prevW;
+  }
+  return best;
+}
+
 function pickWorld(board, color) {
-  const opp = color === BLACK ? WHITE : BLACK;
   const cands = candidates(board, 2);
   if (!cands.length) return idx(7, 7);
   if (cands.length === 1) return cands[0];
 
-  // 1. 立即取胜
-  const myWins = winPointsOf(board, color, cands);
-  if (myWins.length) return myWins[0];
+  // 1. 硬规则（顺序严格不可调换）：立即连五 → 挡对方连五 → 我方活四必胜 → 挡对方活四
+  //    必须在 VCF / 搜索之前执行，否则会出现「对方已能连五，AI 还在冲四」的致命失误
+  const forced = forcedMove(board, color);
+  if (forced) {
+    // 有多个「对方能成活四」的点时，不靠单一指标拍板，交给搜索在候选点里择优
+    if (forced.kind === 'block-live-four' && forced.options.length > 1) {
+      const pick = worldSearchRoot(board, color, forced.options, 900, 1.15, 6);
+      if (pick !== null) return pick;
+    }
+    return forced.move;
+  }
 
-  // 2. VCF 连续冲四取胜
+  // 2. VCF 连续冲四取胜（此时对方已无成五/成活四的硬威胁，冲四才是真先手）
   const vcf = vcfSearch(board, color, 3);
   if (vcf !== null) return vcf;
 
-  // 3. 对方成五点 → 必挡（无杀招时）
-  const oppWins = winPointsOf(board, opp, cands);
-  if (oppWins.length) {
-    let best = oppWins[0], bestS = -Infinity;
-    for (const i of oppWins) {
-      const x = i % SIZE, y = Math.floor(i / SIZE);
-      board[i] = color;
-      const s = sumDir(dirScores(board, x, y, color));
-      board[i] = 0;
-      if (s > bestS) { bestS = s; best = i; }
-    }
-    return best;
-  }
-
-  // 4. 迭代加深 α-β：深度 2 → 4 → 6，时间预算 1.1 秒
-  const deadline = Date.now() + 1100;
-  let best = null;
-  for (const depth of [2, 4, 6]) {
-    try {
-      best = worldRoot(board, color, depth, deadline);
-    } catch (e) { break; }  // 超时沿用上一层完整结果
-  }
+  // 3. 迭代加深 α-β：深度 2 → 4 → 6，时间预算 1.2 秒
+  const best = worldSearchRoot(board, color, null, 1200, 1.15, 6);
   return best !== null ? best : staticBest(board, color);
 }
