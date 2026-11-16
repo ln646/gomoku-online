@@ -1,5 +1,5 @@
 // Service Worker：离线缓存应用外壳，安装后完全离线可玩
-const CACHE_NAME = 'gomoku-offline-v3';
+const CACHE_NAME = 'gomoku-offline-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -30,15 +30,40 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// 请求：缓存优先，后台更新（stale-while-revalidate）
+// 请求策略：
+// - 页面导航（index.html）：网络优先，离线才回退缓存 → 保证发版后立刻拿到新 HTML
+// - 其他静态资源（js/css）：缓存优先 + 后台更新 → 保证离线可玩
+//   （HTML 里的资源带 ?v= 版本号，新 HTML 会自然拉到新资源，不会命中旧缓存）
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET') return;
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  const isNav = req.mode === 'navigate'
+    || url.pathname.endsWith('/')
+    || url.pathname.endsWith('index.html');
+
+  if (isNav) {
+    e.respondWith(
+      fetch(req).then(resp => {
+        if (resp && resp.status === 200) {
+          const clone = resp.clone();
+          caches.open(CACHE_NAME).then(c => c.put(req, clone));
+        }
+        return resp;
+      }).catch(() =>
+        caches.match(req).then(c => c || caches.match('./index.html'))
+      )
+    );
+    return;
+  }
+
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      const fetchPromise = fetch(e.request).then(response => {
-        if (response && response.status === 200 && new URL(e.request.url).origin === self.location.origin) {
+    caches.match(req).then(cached => {
+      const fetchPromise = fetch(req).then(response => {
+        if (response && response.status === 200) {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+          caches.open(CACHE_NAME).then(c => c.put(req, clone));
         }
         return response;
       }).catch(() => cached); // 完全离线时回退到缓存

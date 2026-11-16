@@ -541,7 +541,22 @@ window.addEventListener('appinstalled', () => {
   toast('安装成功，从此离线可玩');
 });
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    // 每次打开页面主动检查一次更新
+    reg.update().catch(() => {});
+    reg.addEventListener('updatefound', () => {
+      const sw = reg.installing;
+      if (!sw) return;
+      sw.addEventListener('statechange', () => {
+        // 新 SW 已激活且当前页面本来就有旧 SW 控制 → 自动刷新一次加载新代码
+        if (sw.state === 'activated' && navigator.serviceWorker.controller
+            && !sessionStorage.getItem('sw_auto_reloaded')) {
+          sessionStorage.setItem('sw_auto_reloaded', '1');
+          location.reload();
+        }
+      });
+    });
+  }).catch(() => {});
 }
 
 // ---------- 启动 ----------
